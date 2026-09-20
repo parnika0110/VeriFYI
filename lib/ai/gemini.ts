@@ -11,6 +11,7 @@
 import { GoogleGenAI } from "@google/genai";
 import { AppError } from "../errors";
 import { log } from "../logging";
+import { serverEnv } from "../server-env";
 import type { AiInvokeResult } from "./types";
 
 /**
@@ -25,11 +26,12 @@ export interface GeminiConfig {
   model: string;
 }
 
-/** Reads GEMINI_API_KEY / GEMINI_MODEL from the environment. Never logs values. */
+/** Reads GEMINI_API_KEY / GEMINI_MODEL via the server-only env accessor
+ *  (runtime env first, then build-time captured values). Never logs values. */
 export function getGeminiConfig(): GeminiConfig | null {
-  const apiKey = process.env.GEMINI_API_KEY?.trim();
+  const apiKey = serverEnv("GEMINI_API_KEY");
   if (!apiKey) return null;
-  const model = process.env.GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL;
+  const model = serverEnv("GEMINI_MODEL") || DEFAULT_GEMINI_MODEL;
   return { apiKey, model };
 }
 

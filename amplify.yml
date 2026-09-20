@@ -1,0 +1,19 @@
+version: 1
+frontend:
+  phases:
+    preBuild:
+      commands:
+        - npm ci --no-audit --no-fund
+    build:
+      commands:
+        # Capture build-time env (Amplify console variables) into the
+        # gitignored server-only module BEFORE next build.
+        - node scripts/write-server-env.mjs
+        - npm run build
+  artifacts:
+    baseDirectory: .next
+    files:
+      - "**/*"
+  cache:
+    paths:
+      - node_modules/**/*

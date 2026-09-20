@@ -13,6 +13,7 @@
 
 import { AppError } from "../errors";
 import { log } from "../logging";
+import { serverEnv } from "../server-env";
 import { invokeGeminiText, isGeminiConfigured, DEFAULT_GEMINI_MODEL } from "./gemini";
 import { invokeMockText, isMockProviderRequested } from "./mock";
 import { getBedrockConfig, isBedrockConfigured, invokeBedrockText } from "./bedrock";
@@ -21,7 +22,7 @@ import type { AiInvoke, AiProviderName } from "./types";
 export type { AiInvoke, AiInvokeResult, AiProviderName } from "./types";
 
 export function getProviderName(): AiProviderName {
-  const explicit = process.env.AI_PROVIDER?.trim().toLowerCase();
+  const explicit = serverEnv("AI_PROVIDER").trim().toLowerCase();
   if (explicit === "mock") return "mock";
   if (explicit === "bedrock") return "bedrock";
   if (explicit === "gemini") return "gemini";
@@ -37,7 +38,7 @@ export function getActiveModelId(): string {
       return getBedrockConfig().modelId;
     case "gemini":
     default:
-      return process.env.GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL;
+      return serverEnv("GEMINI_MODEL") || DEFAULT_GEMINI_MODEL;
   }
 }
 
