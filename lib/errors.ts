@@ -7,6 +7,7 @@
 
 export type ErrorCode =
   | "INVALID_REQUEST"
+  | "INVALID_UPLOAD_REQUEST"
   | "INPUT_TOO_LARGE"
   | "EMPTY_INPUT"
   | "ANALYSIS_FAILED"
@@ -42,6 +43,7 @@ export class AppError extends Error {
 export function httpStatusForCode(code: ErrorCode): number {
   switch (code) {
     case "INVALID_REQUEST":
+    case "INVALID_UPLOAD_REQUEST":
       return 400;
     case "INPUT_TOO_LARGE":
       return 413;
@@ -65,6 +67,7 @@ export function httpStatusForCode(code: ErrorCode): number {
 
 const SAFE_CLIENT_MESSAGES: Record<ErrorCode, string> = {
   INVALID_REQUEST: "Invalid request. Provide a JSON body like { \"text\": \"...\" }.",
+  INVALID_UPLOAD_REQUEST: "Invalid upload. Send a multipart form-data request with a document file (PNG, JPG, or PDF).",
   INPUT_TOO_LARGE: "Input is too large. Please submit a shorter text.",
   EMPTY_INPUT: "Input text must not be empty.",
   ANALYSIS_FAILED: "The analysis could not be completed at this time. Please try again.",

@@ -32,7 +32,9 @@ const ACCEPTED_MIME = [
   "",
 ];
 const ACCEPTED_EXT = [".png", ".jpg", ".jpeg", ".pdf"];
-export const MAX_FILE_MB = 10;
+/** Must match the server/platform cap (MAX_DOCUMENT_BYTES in lib/document-extract.ts;
+ *  Amplify SSR request payload limit). */
+export const MAX_FILE_MB = 6;
 
 /** Validate an uploaded file before it reaches any backend. */
 export function validateFile(file: File): FileValidationResult {

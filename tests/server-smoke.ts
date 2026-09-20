@@ -123,7 +123,7 @@ const PHASE_A: Check[] = [
     fn: async () => (await fetch(`${BASE}/api/does-not-exist`)).status === 404,
   },
   {
-    name: "A11 POST /api/extract-document non-multipart -> 400",
+    name: "A11 POST /api/extract-document non-multipart -> 400 + endpoint-specific message",
     fn: async () => {
       const res = await fetch(`${BASE}/api/extract-document`, {
         method: "POST",
@@ -131,7 +131,13 @@ const PHASE_A: Check[] = [
         body: JSON.stringify({ text: "x" }),
       });
       const body = (await res.json()) as { success?: boolean; error?: string };
-      return res.status === 400 && body.success === false && typeof body.error === "string";
+      return (
+        res.status === 400 &&
+        body.success === false &&
+        typeof body.error === "string" &&
+        body.error.includes("multipart") &&
+        !body.error.includes("JSON body") // must NOT be the /api/analyze message
+      );
     },
   },
   {

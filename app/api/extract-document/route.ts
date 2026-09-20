@@ -31,19 +31,28 @@ export async function POST(request: NextRequest) {
   try {
     const contentType = request.headers.get("content-type") || "";
     if (!contentType.includes("multipart/form-data")) {
-      throw new AppError("INVALID_REQUEST", "Expected a multipart file upload.");
+      throw new AppError(
+        "INVALID_UPLOAD_REQUEST",
+        "Expected a multipart form-data upload with a document file (PNG, JPG, or PDF).",
+      );
     }
 
     let form: FormData;
     try {
       form = await request.formData();
     } catch {
-      throw new AppError("INVALID_REQUEST", "Could not read the uploaded file.");
+      throw new AppError(
+        "INVALID_UPLOAD_REQUEST",
+        "Could not read the uploaded file. Send a multipart form-data request with a document file.",
+      );
     }
 
     const file = form.get(FIELD);
     if (!(file instanceof File)) {
-      throw new AppError("INVALID_REQUEST", "Missing file field.");
+      throw new AppError(
+        "INVALID_UPLOAD_REQUEST",
+        "Missing file field. Send a multipart form-data request with a 'file' field.",
+      );
     }
 
     const bytes = new Uint8Array(await file.arrayBuffer());
