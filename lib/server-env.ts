@@ -11,10 +11,14 @@
  */
 import { SERVER_ENV } from "./server-env.generated";
 
-export type ServerEnvKey = keyof typeof SERVER_ENV;
+/** GEMINI_MODEL is intentionally NOT baked at build time: the build machine's
+ *  value may pin a model with an exhausted/free-tier-invalid quota bucket.
+ *  It comes from runtime env only, falling back to the code-pinned default
+ *  (DEFAULT_GEMINI_MODEL in lib/ai/gemini.ts). */
+export type ServerEnvKey = keyof typeof SERVER_ENV | "GEMINI_MODEL";
 
 export function serverEnv(name: ServerEnvKey): string {
   const runtimeValue = process.env[name];
   if (runtimeValue && runtimeValue.trim()) return runtimeValue.trim();
-  return SERVER_ENV[name] ?? "";
+  return (SERVER_ENV as Record<string, string | undefined>)[name] ?? "";
 }

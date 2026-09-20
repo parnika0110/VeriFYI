@@ -15,7 +15,12 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const KEYS = ["GEMINI_API_KEY", "AI_PROVIDER", "GEMINI_MODEL"];
+// GEMINI_MODEL is deliberately NOT captured: the console value may pin a
+// model whose free-tier daily quota (per model, per project) is already
+// exhausted, and a stale baked value would override the code default.
+// The verified default lives in lib/ai/gemini.ts (DEFAULT_GEMINI_MODEL);
+// local development can still set GEMINI_MODEL via runtime env (.env.local).
+const KEYS = ["GEMINI_API_KEY", "AI_PROVIDER"];
 
 function readDotEnvLocal() {
   const p = path.join(process.cwd(), ".env.local");
