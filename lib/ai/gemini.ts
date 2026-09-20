@@ -15,11 +15,14 @@ import { serverEnv } from "../server-env";
 import type { AiInvokeResult } from "./types";
 
 /**
- * Default model. Pinned to a stable ID after live verification:
- * the "gemini-flash-latest" alias currently resolves to a freshly shipped
- * model that returns 503 (high demand); gemini-2.5-flash is verified working.
+ * Default model. Pinned to a stable ID after live verification against the
+ * full anti-fabrication suite. History: gemini-flash-latest resolved to an
+ * overloaded model (503); gemini-2.5-flash worked but its free-tier daily
+ * bucket (20 req/day, per model) exhausted during demo verification and
+ * gemini-2.5-flash-lite was retired for new users; gemini-3.1-flash-lite
+ * verified passing both production samples with strict verbatim quoting.
  */
-export const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
+export const DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite";
 
 export interface GeminiConfig {
   apiKey: string;
