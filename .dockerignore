@@ -1,0 +1,17 @@
+# Security: NEVER bake local env files (live API keys) into the image.
+# Deployed configuration comes from Lambda environment variables only
+# (infrastructure/template.yaml), not from developer .env files.
+.env
+.env.*
+!.env.example
+
+# Not needed inside the image; keeps build context minimal.
+.git
+.freebuff
+node_modules
+.next
+tests
+docs
+infrastructure
+*.md
+.dockerignore

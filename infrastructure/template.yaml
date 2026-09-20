@@ -1,0 +1,203 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  VeriFYI backend — Next.js app served on AWS Lambda via the Lambda Web
+  Adapter, fronted by API Gateway (HTTP API). AI analysis uses a
+  configurable provider (current: Google Gemini via AI_PROVIDER=gemini;
+  Bedrock remains available as a future/alternative provider); verification
+  history is stored in DynamoDB.
+
+Parameters:
+  AiProvider:
+    Type: String
+    Default: gemini
+    AllowedValues: [gemini, bedrock]
+    Description: >
+      Active AI provider. 'gemini' (current) calls the Gemini API over HTTPS
+      and needs NO AWS permissions. 'bedrock' is the future/alternative
+      provider; selecting it also attaches the conditional Bedrock IAM policy
+      below and requires account-level Bedrock model access.
+  GeminiModel:
+    Type: String
+    Default: gemini-2.5-flash
+    Description: >
+      Gemini model used when AiProvider=gemini. gemini-2.5-flash is verified
+      live; the "gemini-flash-latest" alias may return 503 while the model it
+      points to is newly shipped.
+  GeminiApiKey:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: >
+      Gemini API key for the deployed function. NEVER hardcoded here — passed
+      at deploy time (NoEcho keeps it out of logs/console). Safest current
+      mechanism without app changes; stronger option later: store it in AWS
+      Secrets Manager and pass its dynamic reference as this value, or fetch
+      at runtime.
+  BedrockModelId:
+    Type: String
+    Default: ""
+    Description: >
+      Optional Bedrock model ID / inference profile for the FUTURE provider
+      (unused while AiProvider=gemini). Leave empty to use the app's built-in
+      default (us.anthropic.claude-sonnet-4-5-20250929-v1:0).
+  CorsOrigin:
+    Type: String
+    Default: "*"
+    Description: Allowed CORS origin for the frontend (tighten for production).
+
+Conditions:
+  # Bedrock IAM permissions are only created when the future provider is selected.
+  IsBedrockProvider: !Equals [!Ref AiProvider, "bedrock"]
+
+Globals:
+  Function:
+    Timeout: 60
+    MemorySize: 1024
+    Architectures: [x86_64]
+    Environment:
+      Variables:
+        AWS_LWA_INVOKE_MODE: response_stream
+        VERIFICATIONS_TABLE_NAME: !Ref VerificationsTable
+        AI_PROVIDER: !Ref AiProvider
+        GEMINI_MODEL: !Ref GeminiModel
+        # NoEcho deploy-time injection; empty string -> provider unconfigured.
+        GEMINI_API_KEY: !Ref GeminiApiKey
+        # Future provider only (lib/bedrock.ts reads it; unused when gemini).
+        BEDROCK_MODEL_ID: !Ref BedrockModelId
+
+Resources:
+  VeriFYIFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        # CloudWatch Logs for the function (same as SAM's default role).
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+      Policies:
+        - PolicyDocument:
+            Statement:
+              # The ACTIVE provider (Gemini) is called over HTTPS from Lambda —
+              # no AWS permissions needed. DynamoDB is the only AWS dependency:
+              # write + read access to the verifications table and its GSIs.
+              - Sid: VerificationsTable
+                Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                Resource:
+                  - !GetAtt VerificationsTable.Arn
+                  - !Sub "${VerificationsTable.Arn}/index/*"
+          PolicyName: VerificationsTableAccess
+
+  VeriFYIFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "verifiy-backend-${AWS::StackName}"
+      PackageType: Image
+      Role: !GetAtt VeriFYIFunctionRole.Arn
+      Events:
+        ApiRoot:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: /
+            Method: any
+        ApiProxy:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: /{proxy+}
+            Method: any
+    Metadata:
+      DockerContext: .
+      Dockerfile: Dockerfile
+      DockerTag: latest
+
+  # FUTURE PROVIDER ONLY (attached only when AiProvider=bedrock): kept for the
+  # alternative Bedrock code path (lib/bedrock.ts) so no re-authoring is needed
+  # if the account later gains Bedrock model access. Not created for the
+  # current Gemini deployment.
+  BedrockInvokePolicy:
+    Type: AWS::IAM::Policy
+    Condition: IsBedrockProvider
+    Properties:
+      PolicyName: !Sub "verifiy-bedrock-invoke-${AWS::StackName}"
+      # !Ref on an IAM Role yields the role NAME (what AWS::IAM::Policy wants).
+      Roles:
+        - !Ref VeriFYIFunctionRole
+      PolicyDocument:
+        Statement:
+          - Sid: InvokeBedrockModel
+            Effect: Allow
+            Action:
+              - bedrock:InvokeModel
+              - bedrock:InvokeModelWithResponseStream
+            Resource:
+              - !Sub "arn:${AWS::Partition}:bedrock:*::foundation-model/*"
+              - !Sub "arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/*"
+
+  VerificationsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "verifiy-verifications-${AWS::StackName}"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: gsi1pk
+          AttributeType: S
+        - AttributeName: createdAt
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: gsi1
+          KeySchema:
+            - AttributeName: gsi1pk
+              KeyType: HASH
+            - AttributeName: createdAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+  Api:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      CorsConfiguration:
+        AllowOrigins:
+          - !Ref CorsOrigin
+        AllowMethods: [GET, POST, OPTIONS]
+        AllowHeaders: [Content-Type]
+        MaxAge: 600
+      AccessLogSettings:
+        DestinationArn: !GetAtt HttpApiAccessLogs.Arn
+        Format: '{"requestId":"$context.requestId","ip":"$context.identity.sourceIp","route":"$context.routeKey","status":"$context.status","latencyMs":"$context.responseLatency"}'
+
+  HttpApiAccessLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/http-api/verifiyi-${AWS::StackName}"
+      RetentionInDays: 14
+
+Outputs:
+  ApiBaseUrl:
+    Description: Base URL for the frontend (append /api/analyze etc.)
+    Value: !Sub "https://${Api}.execute-api.${AWS::Region}.${AWS::URLSuffix}"
+  AnalyzeEndpoint:
+    Description: POST endpoint for J Bob's frontend
+    Value: !Sub "https://${Api}.execute-api.${AWS::Region}.${AWS::URLSuffix}/api/analyze"
+  HealthEndpoint:
+    Description: GET probe
+    Value: !Sub "https://${Api}.execute-api.${AWS::Region}.${AWS::URLSuffix}/api/health"
+  VerificationsTableName:
+    Description: DynamoDB table for verification history
+    Value: !Ref VerificationsTable
