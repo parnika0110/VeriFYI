@@ -1,19 +1,15 @@
-# VeriFYI — Backend
+# VeriFYI — Verify what matters
 
-Evidence-based verification assistant for internships, job offers, and recruiter messages.
+Evidence-based verification assistant for internship offers, job messages, recruiter DMs,
+and online listings. **Bharat Builds by AWS × WeMakeDevs hackathon project.**
 
-**Bharat Builds by AWS × WeMakeDevs hackathon project.** AWS is used where it genuinely
-helps: **Amazon Bedrock** for claim analysis, **API Gateway + Lambda** for serving,
-**DynamoDB** for history, **CloudWatch** for observability.
-
-> Backend owner: this repo. Frontend: built separately by J Bob against the contract
-> in [`lib/contract.ts`](lib/contract.ts).
+**Live:** <https://main.d1o8jaoxaet2sg.amplifyapp.com/> · one Next.js app serves both the UI and the API.
 
 ## Problem
 
-People receive internship offers, recruiter DMs, and listings that mix real facts with
-fabrication. Tools that output a "scam score" give no way to challenge the verdict —
-and the same score would brand both a sloppy real listing and an elaborate fake.
+People receive offers and messages that mix real facts with fabrication. Tools that output
+a "scam score" give no way to challenge the verdict — and the same score would brand both
+a sloppy real listing and an elaborate fake.
 
 ## Solution
 
@@ -22,73 +18,109 @@ VeriFYI never calls anything a "scam". It follows one pipeline:
 > **CLAIM → EVIDENCE → STATUS → EXPLANATION → NEXT ACTION**
 
 1. **CLAIM** — extract the specific factual claims from the submitted text
-   (company, role, salary, recruiter identity, payment requirement, contact, domain,
-   deadline, …).
-2. **EVIDENCE** — attach only evidence that actually exists:
-   `USER_PROVIDED` (quoted from the submitted text), `OFFICIAL` (official source quoted
-   in the text), `SEARCH` (a real provided search result) — or none at all.
+   (company, role, salary, recruiter identity, payment requirement, contact, domain, deadline, …).
+2. **EVIDENCE** — attach only evidence that actually exists: `USER_PROVIDED` (a verbatim quote
+   from the submitted text), `OFFICIAL`/`SEARCH` (only when real external evidence is supplied),
+   or none at all.
 3. **STATUS** — evaluate each claim:
    - `SUPPORTED` — available evidence backs it
-   - `UNVERIFIED` — not enough evidence to confirm *(the correct default for
-     real-world claims: nobody can verify a salary from a screenshot alone)*
+   - `UNVERIFIED` — not enough evidence to confirm *(the correct default for real-world claims)*
    - `CONTRADICTED` — available evidence conflicts with it
-4. **EXPLANATION** — each status is justified using only available evidence.
-5. **NEXT ACTION** — what the user can concretely do (verify via official careers page,
-   don't pay before verification, …).
+4. **EXPLANATION** — each status is justified using only the available evidence.
+5. **NEXT ACTION** — what the user can concretely do (check the official careers page, don't pay
+   before verification, …).
 
-## Architecture
+## Architecture (current)
 
 ```text
-Next.js (standalone)          Screenshot/PDF (optional, P1)
-        │                              │
-        ▼                              ▼
-  API Gateway (HTTP API)         Amazon S3
-        │                              │
-        ▼                              ▼
-   AWS Lambda  ◄── Lambda Web Adapter ── containers on Lambda
-        │
-        ├──► Amazon Bedrock (claim extraction + evaluation, structured JSON)
-        └──► DynamoDB (verification history, best-effort)
-
-  CloudWatch: Lambda logs (structured JSON) + API Gateway access logs
+                        Browser (React 19 UI: paste text or upload file)
+                                        │
+                  AWS Amplify Hosting — Next.js 16 SSR + API routes
+                                        │
+              ┌─────────────────────────┴──────────────────────────┐
+              ▼                                                    ▼
+   POST /api/analyze                                   POST /api/extract-document
+              │                                                    │
+              ▼                                                    ▼
+   Google Gemini (AI provider)                          Amazon S3 (temporary upload,
+              │                                          random key, deleted after use)
+              ▼                                                    │
+   lib/validation.ts — anti-fabrication gate                       ▼
+   (strips invented quotes/sources,                       Amazon Textract (OCR:
+   downgrades evidence-less claims)                        sync for images/1-page PDFs,
+              │                                            async job for multi-page PDFs)
+              ▼                                                    │
+   VerificationResult ──────────────► Amazon DynamoDB ◄────────────┘
+   returned to the UI                  (verification history; raw input
+                                        is hashed, never stored)
 ```
 
-`POST /api/analyze` → Lambda → Bedrock → validated `VerificationResult` → client.
-Persistence happens *after* the response is prepared and can never fail an analysis.
+- **Active deployment:** AWS Amplify Hosting (GitHub → `main` branch auto-deploy; build config
+  in [`amplify.yml`](amplify.yml)).
+- **AI provider:** **Google Gemini** (default `gemini-3.1-flash-lite`, pinned after live
+  verification of the anti-fabrication suite). Provider selection is configurable via
+  `AI_PROVIDER`; **Amazon Bedrock remains a future/alternative provider** — its code
+  (`lib/ai/bedrock.ts`) and conditional IAM are intact, just not active.
+- **Alternative serving path (dormant):** [`infrastructure/template.yaml`](infrastructure/template.yaml)
+  defines an API Gateway (HTTP API) + AWS Lambda (container image via Lambda Web Adapter)
+  deployment. It is validated with cfn-lint but not the current production path.
 
-## AWS services and why each exists
+## AWS services — what is actually used and why
 
-| Service | Why it's here |
-| --- | --- |
-| **Amazon Bedrock** | The core analysis engine: claim extraction, evidence classification, status assignment, recommendations. Claude Sonnet 4.5 via the US cross-region inference profile. |
-| **API Gateway (HTTP API)** | Public HTTPS entrypoint for the frontend; CORS, throttling, access logs. |
-| **AWS Lambda** | Runs the Next.js backend as a container; scales to zero; pay-per-request. |
-| **Lambda Web Adapter** | Lets the unmodified Next.js server run as a Lambda (streaming responses). |
-| **Amazon DynamoDB** | Verification history (on-demand billing); GSI for newest-first listing. |
-| **Amazon S3** | *(P1, optional)* storage for uploaded screenshots/PDFs. |
-| **Amazon Textract** | *(P1, optional)* text extraction from screenshots/PDFs feeding the same analyzer. |
-| **CloudWatch** | Structured Lambda logs (hashed input, latency, error category) + API access logs. |
+| Service | Status | Why it's here |
+| --- | --- | --- |
+| **AWS Amplify Hosting** | ✅ Active | Builds and serves the Next.js 16 app (SSR + API routes) with Git-based auto-deploys. |
+| **Amazon Textract** | ✅ Active | Real OCR for uploaded documents: `DetectDocumentText` (images, 1-page PDFs) and the async S3 job flow (`StartDocumentTextDetection` → poll) for multi-page/scanned PDFs. |
+| **Amazon S3** | ✅ Active | Temporary storage for uploads on their way to Textract. Random non-PII keys, AES-256 encryption, **deleted immediately after processing**, 1-day lifecycle backstop. |
+| **Amazon DynamoDB** | ✅ Active | Verification history (on-demand billing, GSI for newest-first listing). Raw user input is **hashed, never stored**; persistence is best-effort and can never fail an analysis. |
+| **AWS CloudWatch** | ✅ Active | Structured application logs (no document contents, no user input, no secrets) + Amplify build logs. |
+| **AWS Lambda + API Gateway + Lambda Web Adapter** | 🟡 Defined, not current | The SAM stack in `infrastructure/` is a fully-working alternative deployment path (container image on Lambda behind an HTTP API). Kept validated; not what Amplify serves today. |
+| **Amazon Bedrock** | 🟠 Future provider | Inactive because of an account-level Bedrock authorization restriction. Provider code, prompt, and a **conditional** IAM policy (created only when `AiProvider=bedrock`) remain ready — switching back is a config change, not a rewrite. |
 
-## AI design
+No S3 public access, no secrets in code, no fabricated "official" evidence.
 
-- **Claim extraction** — the model splits the text into 3–10 specific claims
-  (company, role, salary, recruiter, payment, contact, domain, deadline, other).
-- **Evidence handling & anti-fabrication** — the prompt defines a sentinel source
-  `"AI internal knowledge"`; anything the model would claim from training data gets
-  that source, and the validator (`lib/validation.ts`) **strips it and downgrades the
-  claim to `UNVERIFIED`**. Any SUPPORTED/CONTRADICTED claim with zero surviving
-  evidence is also downgraded. The model's word is never treated as evidence.
-- **Uncertainty** — `UNVERIFIED` is the expected outcome for real-world claims;
-  the system explains *what would be needed* to verify.
-- **Structured output** — strict-JSON prompt; tolerant extraction (fences, prose);
-  hand-rolled schema validation; malformed output is retried once, then surfaces as a
-  controlled 5xx — never a crash, never leaked internals.
-- **Status coherence** — `overallStatus` is recomputed from per-claim statuses, so
-  `HIGH_RISK` always traces to a confirmed payment requirement or a contradicted claim;
-  a "no fee" confirmation can never produce `HIGH_RISK`, and `VERIFIED` requires every
-  claim evidence-backed with no payment involved.
+## The AI layer
+
+`lib/ai/` is a provider seam (`gemini.ts` / `bedrock.ts` / `mock.ts` behind `index.ts`).
+The provider only produces raw JSON text — **it is never trusted to enforce security**:
+
+- **Anti-fabrication gate (`lib/validation.ts`, authoritative):** `USER_PROVIDED` evidence must
+  quote text that verbatimly occurs in the submitted source; invented quotes and URLs are
+  stripped; OFFICIAL/SEARCH evidence is rejected unless real external evidence is supplied;
+  evidence-less SUPPORTED/CONTRADICTED claims are downgraded to `UNVERIFIED`; the overall
+  status is recomputed from per-claim statuses (payment requests → `HIGH_RISK`; a "no fee"
+  statement can never produce `HIGH_RISK`).
+- **Structured output:** JSON response MIME + temperature 0; malformed output is retried once,
+  then surfaces as a controlled 5xx — never a crash, never leaked internals.
+- **Failure honesty:** if Gemini is unconfigured/unavailable the API fails clearly (fail-closed).
+  Mock mode (`AI_PROVIDER=mock`) is an explicit dev-only opt-in; production never falls back
+  to mock data.
+
+## Document upload pipeline (PDF / PNG / JPG)
+
+`components/FileUpload.tsx` → `POST /api/extract-document` (multipart):
+
+1. Server-side validation (MIME **and** extension, ≤ 10 MB — the Textract sync limit).
+2. Upload to S3 under a random 32-hex key in `tmp-uploads/` (original filename never stored).
+3. Textract extracts the real text — async job path handles scanned/image-only PDFs (e.g. a
+   2-page scanned offer letter that has no text layer).
+4. A meaningfulness gate refuses to return less than ~40 alphanumeric characters —
+   OCR either produces the document's actual text or the request fails with a clean `422`.
+   Nothing is ever fabricated to fill the gap.
+5. The S3 object is deleted in every path (success, failure, empty OCR); a 1-day lifecycle
+   rule is the backstop.
+6. The extracted text flows through the **existing** `/api/analyze` → Gemini → validation
+   pipeline exactly like pasted text, so every evidence quote is traceable to the extracted
+   document text.
 
 ## API
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/api/analyze` | Analyze pasted (or extracted) text → `VerificationResult` |
+| `POST` | `/api/extract-document` | Multipart PDF/PNG/JPG → extracted text (S3 + Textract) |
+| `GET` | `/api/health` | Liveness + safe config probe (provider name, `providerConfigured`, env *presence* booleans — never values) |
+| `GET` | `/api/verifications?limit=20` | Recent verification history (optional feature) |
 
 ### `POST /api/analyze`
 
@@ -131,62 +163,109 @@ Persistence happens *after* the response is prepared and can never fail an analy
 }
 ```
 
-Errors: `400` invalid/empty · `413` too large · `5xx` controlled `{ "success": false, "error": "..." }`
-(no stack traces, no AWS details). Full types: [`lib/contract.ts`](lib/contract.ts).
+Errors: `400` invalid/empty · `413` too large · `422` no meaningful text extracted ·
+`5xx` controlled `{ "success": false, "error": "..." }` — no stack traces, no AWS or
+provider details. The canonical contract is [`lib/contract.ts`](lib/contract.ts)
+(single source of truth for backend ↔ frontend).
 
-### `GET /api/health`
+## Project structure
 
-Liveness + configuration probe: `{ ok, service, time, bedrockConfigured, dynamodbConfigured }`.
+```text
+app/                        Next.js 16 App Router — UI pages + API routes
+components/                 UI (Analyzer, VerificationReport, ClaimCard, FileUpload, …)
+lib/contract.ts             API contract types (single source of truth)
+lib/validation.ts           Anti-fabrication gate (authoritative, security-critical)
+lib/analyzer.ts             Claim extraction + evaluation pipeline
+lib/ai/                     Provider seam: gemini.ts / bedrock.ts / mock.ts / index.ts
+lib/document-extract.ts     S3 → Textract extraction pipeline (test-injectable deps)
+lib/verifications.ts        DynamoDB history (hashed input, best-effort)
+lib/server-env.ts           Server-only env accessor (build-time bake for Amplify)
+scripts/write-server-env.mjs  Bakes GEMINI_API_KEY/AI_PROVIDER into a gitignored
+                              server-only module at build time (see note below)
+tests/                      Offline unit / smoke / integration / document suites
+infrastructure/             SAM template + deploy.sh (alternative Lambda deployment)
+amplify.yml                 Amplify build spec
+```
 
-### `GET /api/verifications?limit=20`
-
-Recent verification history (optional feature; demo does not depend on it).
-
-## Safety
-
-VeriFYI does **not** establish absolute truth. Statuses describe the relationship
-between claims and *available evidence only*; absence of evidence is reported as
-`UNVERIFIED`, never as proof. Users should independently verify sensitive information
-(offers, payments, identity) through official channels before acting. The system will
-not label anything a "scam".
-
-## Setup
+## Local development
 
 ```bash
 npm install
-cp .env.example .env.local   # fill in values (never commit .env*)
-npm run dev                  # http://localhost:3000
-npm test                     # 17 offline cases + typecheck guard
-npm run test:live            # 3 live Bedrock cases (needs valid AWS creds)
-npm run build && npx tsx tests/server-smoke.ts   # 14 HTTP smoke checks
-                             # (phase B uses MOCK_BEDROCK=1, a dev-only seam)
+cp .env.example .env.local    # fill in values — .env.local is gitignored, never commit it
+npm run dev                   # http://localhost:3000
 ```
 
-### Environment variables (see `.env.example`)
+### Environment variables (see [`.env.example`](.env.example))
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `AWS_REGION` | yes (default `us-east-1`) | Bedrock/DynamoDB region; credentials come from the default chain (`aws login` SSO locally, Lambda role in production) |
-| `BEDROCK_MODEL_ID` | no | Override the model; default `us.anthropic.claude-sonnet-4-5-20250929-v1:0` |
+| `AI_PROVIDER` | no (default `gemini`) | `gemini` \| `mock` (dev) \| `bedrock` (future) |
+| `GEMINI_API_KEY` | yes (for real analysis) | Google AI Studio key — **server-side only**, never `NEXT_PUBLIC_*` |
+| `GEMINI_MODEL` | no | Runtime override; code default is the verified `gemini-3.1-flash-lite` |
+| `AWS_REGION` | no (default `us-east-1`) | Region for S3/Textract/DynamoDB (and future Bedrock) |
+| `S3_UPLOADS_BUCKET` | for uploads | Temporary-upload bucket for the Textract pipeline |
+| `TEXTRACT_S3_PREFIX` | no (default `tmp-uploads/`) | Key prefix for temporary uploads |
 | `VERIFICATIONS_TABLE_NAME` | no | DynamoDB table; history disabled when unset |
-| `UPLOADS_BUCKET_NAME` | no | S3 bucket (P1 uploads; disabled when unset) |
+| `NEXT_PUBLIC_USE_MOCK` | set to `false` | Only `true` enables the canned demo mode; leave unset/false for the real API |
+| `NEXT_PUBLIC_API_URL` | no | Base URL for analyses; unset = same-origin (how the deployed app runs) |
+| `BEDROCK_MODEL_ID` | no | Future Bedrock provider only |
 
-## Deployment
+> **Why a build-time env step?** Amplify Hosting (Gen 1) passes console environment variables
+> to the *build* but not to the SSR runtime. `scripts/write-server-env.mjs` (wired into
+> `prebuild` and `amplify.yml`) bakes `GEMINI_API_KEY`/`AI_PROVIDER` into
+> `lib/server-env.generated.ts`, which is **gitignored**, imported only by
+> `lib/server-env.ts`, and reachable only from server-side `/api` code — the key never
+> enters any client bundle. `GEMINI_MODEL` is deliberately *not* baked so a stale console
+> value can't pin a model with an exhausted quota bucket.
+
+### AWS credentials for local runs
+
+Textract/S3/DynamoDB calls use the standard SDK credential chain (`aws login` SSO locally).
+Gemini needs no AWS permissions — it's a plain HTTPS API call from the server.
+
+## Tests
 
 ```bash
-aws login                    # valid AWS session
-# start Docker Desktop, then:
-./infrastructure/deploy.sh   # or: AWS_REGION=ap-south-1 STACK_NAME=verifiy-backend ./infrastructure/deploy.sh
+npm test                  # analyzer + anti-fabrication validation suite (offline)
+npm run test:document     # S3+Textract pipeline logic with injected fakes (offline, hermetic)
+npm run test:integration  # real backend through the frontend's production code path
+npx tsx tests/server-smoke.ts   # HTTP smoke checks against a running dev server
+npm run test:gemini       # live Gemini end-to-end (needs GEMINI_API_KEY; uses quota)
+npm run lint && npx tsc --noEmit && npm run build
 ```
 
-The script installs the SAM CLI if missing, builds the container image, deploys
-(`infrastructure/template.yaml`: HttpApi + Lambda + DynamoDB, least-privilege IAM),
-then prints `ApiBaseUrl`, the `POST /api/analyze` endpoint, and the health probe.
+The document suite proves, without network calls: type/size rejection, no-fabrication
+meaningfulness gate, S3 cleanup on every failure path, non-PII random keys, evidence
+traceability against extracted text, and that document contents are never logged.
 
-First deploy notes:
-- Enable **Bedrock model access** for Claude Sonnet 4.5 in the target region:
-  <https://console.aws.amazon.com/bedrock/home?#/modelaccess>
-- CORS defaults to `*` for the hackathon; set `CORS_ORIGIN` to the frontend origin
-  before a public launch.
-- Logs: CloudWatch log groups `/aws/lambda/verifiy-backend-<stack>` and
-  `/aws/http-api/verifiyi-<stack>`.
+## Deployment (current: AWS Amplify)
+
+1. Push to `main` on <https://github.com/parnika0110/VeriFYI> — Amplify auto-builds.
+2. Amplify console → Environment variables (for All branches): `GEMINI_API_KEY`
+   (and optionally `AI_PROVIDER=gemini`, `S3_UPLOADS_BUCKET`).
+3. Build runs `amplify.yml`: `npm ci` → bake server env → `next build`.
+4. The executing AWS role (Amplify's service role, or the SAM Lambda role) needs the
+   least-privilege S3 `PutObject`/`DeleteObject` on `tmp-uploads/*` and Textract document
+   permissions — as defined in `infrastructure/template.yaml` for the Lambda path.
+
+**Alternative deployment** (API Gateway + Lambda, container image):
+`./infrastructure/deploy.sh` builds and deploys the SAM stack with a NoEcho `GeminiApiKey`
+parameter and prints the `ApiBaseUrl` output.
+
+## Safety & privacy
+
+- VeriFYI does **not** establish absolute truth: statuses describe the relationship between
+  claims and *available evidence only*; absence of evidence is reported as `UNVERIFIED`,
+  never as proof, and nothing is ever labeled a "scam".
+- Uploads are processed in memory + temporary S3 only, deleted immediately after extraction,
+  never persisted in DynamoDB, and never logged. Extracted text is treated exactly like
+  pasted text; evidence quotes are validated verbatim against it.
+- Logs contain hashes and metadata (latency, char counts, error categories) — no raw user
+  input, no document contents, no secrets. `.env*` files are gitignored; the generated
+  server-env module is gitignored; API keys live only in the server environment.
+
+## Credits
+
+- Backend/AI/AWS: VeriFYI backend repo (this one)
+- Frontend UI: built by **J Bob**, integrated into this app against `lib/contract.ts`
+- Built for the **Bharat Builds by AWS × WeMakeDevs hackathon**
