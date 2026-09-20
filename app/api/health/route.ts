@@ -17,6 +17,7 @@ export function GET() {
     bedrockConfigured: isProviderConfigured(),
     dynamodbConfigured: isDynamoDbConfigured(),
     provider: getProviderName(),
+    providerConfigured: isProviderConfigured(),
   };
   return NextResponse.json(body);
 }

@@ -17,14 +17,20 @@ import type {
  * Components never call fetch() directly.
  *
  * Modes (env vars, see .env.example):
- *  - MOCK mode   (NEXT_PUBLIC_USE_MOCK=true): realistic local responses so
- *    development and the demo never block on backend readiness.
- *  - REAL mode   (NEXT_PUBLIC_USE_MOCK=false): POST { text } to
- *    `${NEXT_PUBLIC_API_URL}/api/analyze` and normalize the response.
+ *  - REAL mode (default; NEXT_PUBLIC_USE_MOCK unset or "false"): POST { text }
+ *    to `${NEXT_PUBLIC_API_URL}/api/analyze` and normalize the response.
+ *    Production ALWAYS runs this mode — a failed API call surfaces a clear
+ *    error state, never demo data.
+ *  - MOCK mode (explicit opt-in: NEXT_PUBLIC_USE_MOCK=true): realistic local
+ *    responses so development can proceed without backend readiness. The
+ *    Navbar shows a "Mock data" badge in this mode.
+ *
+ * NOTE: NEXT_PUBLIC_* vars are inlined at BUILD time — the default is baked
+ * into the client bundle. Mock must therefore be opt-in, never default-on.
  */
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
-export const USE_MOCK = (process.env.NEXT_PUBLIC_USE_MOCK ?? "true") !== "false";
+export const USE_MOCK = (process.env.NEXT_PUBLIC_USE_MOCK ?? "false") === "true";
 
 const CLAIM_STATUSES: ClaimStatus[] = ["SUPPORTED", "UNVERIFIED", "CONTRADICTED"];
 const OVERALL_STATUSES: OverallStatus[] = [

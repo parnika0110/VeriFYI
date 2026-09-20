@@ -69,7 +69,8 @@ const PHASE_A: Check[] = [
         body.ok === true &&
         body.service === "verifyi-backend" &&
         typeof body.bedrockConfigured === "boolean" &&
-        typeof body.dynamodbConfigured === "boolean"
+        typeof body.dynamodbConfigured === "boolean" &&
+        typeof body.providerConfigured === "boolean"
       );
     },
   },

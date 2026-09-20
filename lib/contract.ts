@@ -100,6 +100,8 @@ export interface HealthResponse {
   dynamodbConfigured: boolean;
   /** Active AI provider ("gemini" | "bedrock" | "mock"). Additive field. */
   provider?: "gemini" | "bedrock" | "mock";
+  /** True when the active provider can actually run (e.g. key present). Additive field. */
+  providerConfigured?: boolean;
 }
 
 /** Envelope for GET /api/verifications (history; optional feature). */

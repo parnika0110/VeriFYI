@@ -33,8 +33,13 @@ export async function POST(request: NextRequest) {
     log.info("analysis_started", { inputLength, provider: getProviderName() });
 
     // Fail fast with a controlled error when the active provider is not
-    // configured (e.g. GEMINI_API_KEY missing) — never a partial result.
+    // configured (e.g. GEMINI_API_KEY missing) — never a partial result and
+    // never a silent mock fallback.
     if (!isProviderConfigured()) {
+      log.warn("provider_not_configured", {
+        provider: getProviderName(),
+        providerConfigured: false,
+      });
       throw new AppError(
         "ANALYSIS_FAILED",
         "The analysis service is not configured. Please try again later.",
