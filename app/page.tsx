@@ -38,7 +38,13 @@ export default function Home() {
 
   const runAnalysis = useCallback(
     async (text: string, file: UploadedFile | null) => {
-      const inputText = text.trim() || (file ? `[Uploaded file: ${file.name}]` : "");
+      // A document's extracted text IS the source text — same pipeline as
+      // pasted input. If extraction produced nothing, refuse honestly.
+      const inputText = text.trim() || (file?.extractedText ?? "").trim();
+      if (!inputText && file) {
+        setError("The document contained no readable text to analyze.");
+        return;
+      }
       if (!inputText) {
         setError(new VerifyiError("empty-input", "Paste a message to analyze first."));
         setPhase("input");

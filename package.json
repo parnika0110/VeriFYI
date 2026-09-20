@@ -11,18 +11,23 @@
     "test": "tsx tests/analyzer.test.ts",
     "test:live": "tsx tests/analyzer.test.ts --live",
     "test:gemini": "tsx tests/live-gemini.ts",
-    "test:integration": "tsx tests/integration-frontend.ts"
+    "test:integration": "tsx tests/integration-frontend.ts",
+    "test:document": "tsx tests/document-extract.test.ts"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.1136.0",
     "@aws-sdk/client-dynamodb": "^3.1136.0",
+    "@aws-sdk/client-s3": "^3.1136.0",
+    "@aws-sdk/client-textract": "^3.1136.0",
     "@aws-sdk/lib-dynamodb": "^3.1136.0",
     "@google/genai": "^2.23.0",
     "geist": "^1.7.2",
     "lucide-react": "^1.47.0",
     "next": "16.3.5",
+    "pdfjs-dist": "^6.3.289",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",

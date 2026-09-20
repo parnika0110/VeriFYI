@@ -1,16 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { CloudUpload, FileText, FileImage, FileX, LoaderCircle, X } from "lucide-react";
 import { cn, formatBytes, validateFile } from "@/lib/api-utils";
 
 /**
  * Upload UI for screenshots (PNG/JPG) and PDFs. Drag-and-drop + click to
- * browse, with validation, preview, and a mock "processing" progress state.
- *
- * BACKEND INTEGRATION POINT: see onFileSelected below. When the backend
- * exposes an upload endpoint (S3 + Textract, per the architecture), replace
- * the mock progress with a real POST and extract text to feed analysis.
+ * browse, with validation and REAL text extraction via
+ * POST /api/extract-document (Amazon S3 + Textract on the server).
+ * On success the extracted document text is handed to the analysis flow —
+ * the same /api/analyze pipeline as pasted text. The file's contents are
+ * processed server-side and never stored (temporary object deleted after OCR).
  */
 
 export interface UploadedFile {
@@ -19,9 +19,11 @@ export interface UploadedFile {
   type: string;
   /** Data URL for image previews; undefined for PDFs. */
   previewUrl?: string;
+  /** Text actually extracted from the document server-side. */
+  extractedText?: string;
 }
 
-type UploadStatus = "idle" | "validating" | "uploading" | "ready" | "error";
+type UploadStatus = "idle" | "validating" | "extracting" | "ready" | "error";
 
 const ACCEPT = ".png,.jpg,.jpeg,.pdf";
 
@@ -37,27 +39,12 @@ export function FileUpload({
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [status, setStatus] = useState<UploadStatus>("idle");
-  const [progress, setProgress] = useState(0);
+  const [statusMessage, setStatusMessage] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
-  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
-
-  // Simulated progress while in mock upload mode. Progress is reset where
-  // the status transitions (not in the effect body) to avoid cascading renders.
-  useEffect(() => {
-    if (status !== "uploading") return;
-    const tick = setInterval(() => {
-      setProgress((p) => Math.min(96, p + 7 + Math.random() * 9));
-    }, 150);
-    return () => clearInterval(tick);
-  }, [status]);
-
-  // Clear pending timers on unmount.
-  useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
   const reset = useCallback(() => {
-    timers.current.forEach(clearTimeout);
     setStatus("idle");
-    setProgress(0);
+    setStatusMessage("");
     setError(null);
   }, []);
 
@@ -72,23 +59,42 @@ export function FileUpload({
         setError(result.message);
         return;
       }
-      setStatus("uploading");
-      setProgress(0);
-      const finish = 500 + Math.random() * 700;
-      timers.current.push(
-        setTimeout(() => {
+      // REAL extraction on the server: S3 (temporary) + Textract OCR.
+      setStatus("extracting");
+      setStatusMessage("Extracting text from document…");
+      (async () => {
+        const body = new FormData();
+        body.append("file", candidate);
+        const response = await fetch("/api/extract-document", {
+          method: "POST",
+          body,
+        });
+        const payload = (await response.json().catch(() => null)) as
+          | { success?: boolean; text?: string; pages?: number; error?: string }
+          | null;
+        if (!response.ok || !payload?.success || !payload.text) {
+          throw new Error(payload?.error || "Text extraction failed. Please try a different file.");
+        }
+        return payload;
+      })()
+        .then((payload) => {
           const isImage = candidate.type.startsWith("image/") || /\.(png|jpe?g)$/i.test(candidate.name);
-          const next: UploadedFile = {
+          onFileChange({
             name: candidate.name,
             size: candidate.size,
             type: candidate.type || "application/octet-stream",
             previewUrl: isImage ? URL.createObjectURL(candidate) : undefined,
-          };
-          setProgress(100);
+            extractedText: payload.text,
+          });
+          setStatusMessage(
+            payload.pages ? `Extracted ${payload.pages} page${payload.pages === 1 ? "" : "s"}.` : "",
+          );
           setStatus("ready");
-          onFileChange(next);
-        }, finish),
-      );
+        })
+        .catch((err: unknown) => {
+          setStatus("error");
+          setError(err instanceof Error ? err.message : "Text extraction failed. Please try a different file.");
+        });
     },
     [disabled, onFileChange, reset],
   );
@@ -100,7 +106,7 @@ export function FileUpload({
     if (inputRef.current) inputRef.current.value = "";
   }
 
-  const busy = status === "uploading" || status === "validating";
+  const busy = status === "validating" || status === "extracting";
 
   return (
     <div className="w-full">
@@ -153,17 +159,14 @@ export function FileUpload({
             />
           )}
           <span className="text-sm font-medium text-[var(--ink-950)]">
-            {busy ? "Reading file…" : "Drop a screenshot or PDF here, or click to browse"}
+            {status === "extracting" ? statusMessage || "Extracting text from document…" : busy ? "Checking file…" : "Drop a screenshot or PDF here, or click to browse"}
           </span>
           <span id="upload-hint" className="text-xs text-[var(--ink-400)]">
             PNG, JPG or PDF · up to 10 MB
           </span>
-          {status === "uploading" && (
+          {status === "extracting" && (
             <span className="mt-1 h-1 w-40 overflow-hidden rounded-full bg-[var(--surface-muted)]">
-              <span
-                className="block h-full rounded-full bg-[var(--accent)] transition-[width] duration-150"
-                style={{ width: `${progress}%` }}
-              />
+              <span className="block h-full w-1/3 animate-pulse rounded-full bg-[var(--accent)]" />
             </span>
           )}
         </button>
@@ -184,12 +187,12 @@ export function FileUpload({
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium text-[var(--ink-950)]">{file.name}</p>
             <p className="text-xs text-[var(--ink-400)]">
-              {formatBytes(file.size)} · {file.type || "file"}
+              {statusMessage || `${formatBytes(file.size)} · ${file.type || "file"}`}
             </p>
           </div>
           <span className="inline-flex items-center gap-1 rounded-full border border-[var(--status-supported-border)] bg-[var(--status-supported-soft)] px-2 py-0.5 text-[11px] font-semibold text-[var(--status-supported)]">
             <FileImage className="size-3.5" aria-hidden="true" />
-            Ready
+            Text extracted
           </span>
           <button
             type="button"

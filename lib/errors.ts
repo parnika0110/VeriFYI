@@ -13,7 +13,12 @@ export type ErrorCode =
   | "MODEL_OUTPUT_INVALID"
   | "UPSTREAM_TIMEOUT"
   | "NOT_FOUND"
-  | "INTERNAL_ERROR";
+  | "INTERNAL_ERROR"
+  // Document upload extraction (S3 + Textract)
+  | "UNSUPPORTED_FILE_TYPE"
+  | "FILE_TOO_LARGE"
+  | "EMPTY_FILE"
+  | "NO_TEXT_EXTRACTED";
 
 export class AppError extends Error {
   readonly code: ErrorCode;
@@ -41,7 +46,11 @@ export function httpStatusForCode(code: ErrorCode): number {
     case "INPUT_TOO_LARGE":
       return 413;
     case "EMPTY_INPUT":
+    case "EMPTY_FILE":
+    case "UNSUPPORTED_FILE_TYPE":
       return 400;
+    case "NO_TEXT_EXTRACTED":
+      return 422;
     case "NOT_FOUND":
       return 404;
     case "UPSTREAM_TIMEOUT":
@@ -63,6 +72,10 @@ const SAFE_CLIENT_MESSAGES: Record<ErrorCode, string> = {
   UPSTREAM_TIMEOUT: "The analysis took too long. Please try again with a shorter text.",
   NOT_FOUND: "Resource not found.",
   INTERNAL_ERROR: "An internal error occurred. Please try again later.",
+  UNSUPPORTED_FILE_TYPE: "Unsupported file type. Please upload a PNG, JPG, or PDF.",
+  FILE_TOO_LARGE: "File is too large. The maximum size is 10 MB.",
+  EMPTY_FILE: "The uploaded file is empty.",
+  NO_TEXT_EXTRACTED: "OCR couldn’t find readable text in this document. Try a clearer scan or paste the text.",
 };
 
 /** The only error shape that may be serialized to a client. */

@@ -21,15 +21,13 @@ import {
 import { randomUUID } from "node:crypto";
 import type { StoredVerification, VerificationResult } from "./contract";
 import { log } from "./logging";
-
-const TABLE_NAME = process.env.VERIFICATIONS_TABLE_NAME || "";
-const AWS_REGION = process.env.AWS_REGION || "us-east-1";
+import { serverEnv } from "./server-env";
 
 let cachedDocClient: DynamoDBDocumentClient | null = null;
 
 function getDocClient(): DynamoDBDocumentClient {
   if (!cachedDocClient) {
-    const client = new DynamoDBClient({ region: AWS_REGION });
+    const client = new DynamoDBClient({ region: serverEnv("AWS_REGION") || "ap-southeast-1" });
     cachedDocClient = DynamoDBDocumentClient.from(client, {
       marshallOptions: { removeUndefinedValues: true },
     });
@@ -39,7 +37,7 @@ function getDocClient(): DynamoDBDocumentClient {
 
 /** True when DynamoDB history is usable in this environment. */
 export function isDynamoDbConfigured(): boolean {
-  return Boolean(TABLE_NAME);
+  return Boolean(serverEnv("VERIFICATIONS_TABLE_NAME"));
 }
 
 /** Persist a verification result. Returns the stored record, or null when disabled/failed. */
@@ -58,9 +56,10 @@ export async function saveVerification(
   };
 
   const startedAt = Date.now();
+  const tableName = serverEnv("VERIFICATIONS_TABLE_NAME");
   await getDocClient().send(
     new PutCommand({
-      TableName: TABLE_NAME,
+      TableName: tableName,
       Item: { ...record, gsi1pk: "VERIFICATION" },
     }),
   );
@@ -75,7 +74,7 @@ export async function listVerifications(limit = 20): Promise<StoredVerification[
 
   const response = await getDocClient().send(
     new QueryCommand({
-      TableName: TABLE_NAME,
+      TableName: serverEnv("VERIFICATIONS_TABLE_NAME"),
       IndexName: "gsi1",
       KeyConditionExpression: "gsi1pk = :pk",
       ExpressionAttributeValues: { ":pk": "VERIFICATION" },
@@ -91,7 +90,7 @@ export async function countVerificationsByStatus(): Promise<Record<string, numbe
   if (!isDynamoDbConfigured()) return {};
   const response = await getDocClient().send(
     new ScanCommand({
-      TableName: TABLE_NAME,
+      TableName: serverEnv("VERIFICATIONS_TABLE_NAME"),
       ProjectionExpression: "#s",
       ExpressionAttributeNames: { "#s": "overallStatus" },
     }),

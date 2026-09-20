@@ -65,6 +65,9 @@ Globals:
         GEMINI_API_KEY: !Ref GeminiApiKey
         # Future provider only (lib/bedrock.ts reads it; unused when gemini).
         BEDROCK_MODEL_ID: !Ref BedrockModelId
+        # Document upload extraction (S3 + Textract).
+        S3_UPLOADS_BUCKET: !Ref S3UploadsBucket
+        TEXTRACT_S3_PREFIX: "tmp-uploads/"
 
 Resources:
   VeriFYIFunctionRole:
@@ -95,6 +98,24 @@ Resources:
                 Resource:
                   - !GetAtt VerificationsTable.Arn
                   - !Sub "${VerificationsTable.Arn}/index/*"
+              # Temporary document uploads for Textract extraction:
+              # put + delete only, restricted to the tmp-uploads/ prefix.
+              - Sid: TempUploadObjects
+                Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource: !Sub "${S3UploadsBucket.Arn}/tmp-uploads/*"
+              # Least-privilege Textract OCR: exactly the three document-text
+              # actions the app calls. Textract defines no resource types for
+              # these APIs, so Resource "*" is required and scoped by design.
+              - Sid: TextractDocumentTextOnly
+                Effect: Allow
+                Action:
+                  - textract:DetectDocumentText
+                  - textract:StartDocumentTextDetection
+                  - textract:GetDocumentTextDetection
+                Resource: "*"
           PolicyName: VerificationsTableAccess
 
   VeriFYIFunction:
@@ -144,6 +165,29 @@ Resources:
               - !Sub "arn:${AWS::Partition}:bedrock:*::foundation-model/*"
               - !Sub "arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/*"
 
+  # Temporary storage for document uploads on their way through Textract.
+  # Objects live under tmp-uploads/ and are deleted by the app immediately
+  # after processing; the lifecycle rule is the backstop (24h).
+  S3UploadsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "verifiy-uploads-${AWS::StackName}-${AWS::AccountId}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-temp-uploads
+            Prefix: tmp-uploads/
+            Status: Enabled
+            ExpirationInDays: 1
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
   VerificationsTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -189,6 +233,9 @@ Resources:
       RetentionInDays: 14
 
 Outputs:
+  S3UploadsBucketName:
+    Description: Temporary upload bucket for document extraction (S3 + Textract)
+    Value: !Ref S3UploadsBucket
   ApiBaseUrl:
     Description: Base URL for the frontend (append /api/analyze etc.)
     Value: !Sub "https://${Api}.execute-api.${AWS::Region}.${AWS::URLSuffix}"

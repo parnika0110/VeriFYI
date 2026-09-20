@@ -47,3 +47,6 @@ lib/server-env.generated.ts
 *.tsbuildinfo
 next-env.d.ts
 .freebuff/ 
+
+# OCR artifacts (not used by the server-side Textract pipeline)
+*.traineddata

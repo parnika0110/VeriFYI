@@ -20,7 +20,7 @@ import path from "node:path";
 // exhausted, and a stale baked value would override the code default.
 // The verified default lives in lib/ai/gemini.ts (DEFAULT_GEMINI_MODEL);
 // local development can still set GEMINI_MODEL via runtime env (.env.local).
-const KEYS = ["GEMINI_API_KEY", "AI_PROVIDER"];
+const KEYS = ["GEMINI_API_KEY", "AI_PROVIDER", "AWS_REGION", "S3_UPLOADS_BUCKET"];
 
 function readDotEnvLocal() {
   const p = path.join(process.cwd(), ".env.local");

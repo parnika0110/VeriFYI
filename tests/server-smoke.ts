@@ -3,12 +3,14 @@
  *
  * Requires a production build (`npm run build`) since it runs `next start`.
  *
- * Two phases (both hermetic: AI env is pinned explicitly so a developer's
- * .env.local cannot leak into the harness):
- *   A) server with an UNCONFIGURED provider: input-validation status codes
- *      (400/413) and the controlled 5xx when no AI provider is usable.
- *   B) server with the mock provider via legacy MOCK_BEDROCK=1: the full
- *      valid POST /api/analyze 200 contract, offline and deterministic.
+ * Two phases (both hermetic: AI env is pinned EXPLICITLY and non-empty so
+ * neither a developer's .env.local NOR the build-baked
+ * lib/server-env.generated.ts can leak into the harness — serverEnv()
+ * prefers non-empty process.env over the generated file):
+ *   A) server with an UNCONFIGURED provider (bedrock selected, no AWS creds):
+ *      input-validation status codes (400/413) and the controlled 5xx.
+ *   B) server with the explicit mock provider: the full valid
+ *      POST /api/analyze 200 contract, offline and deterministic.
  *
  * Usage: npx tsx tests/server-smoke.ts
  */
@@ -119,6 +121,34 @@ const PHASE_A: Check[] = [
   {
     name: "A10 unknown API path -> 404",
     fn: async () => (await fetch(`${BASE}/api/does-not-exist`)).status === 404,
+  },
+  {
+    name: "A11 POST /api/extract-document non-multipart -> 400",
+    fn: async () => {
+      const res = await fetch(`${BASE}/api/extract-document`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: "x" }),
+      });
+      const body = (await res.json()) as { success?: boolean; error?: string };
+      return res.status === 400 && body.success === false && typeof body.error === "string";
+    },
+  },
+  {
+    name: "A12 multipart upload without configured bucket -> controlled 5xx, no leak",
+    fn: async () => {
+      const form = new FormData();
+      form.append("file", new File([new Uint8Array([1, 2, 3])], "scan.pdf", { type: "application/pdf" }));
+      const res = await fetch(`${BASE}/api/extract-document`, { method: "POST", body: form });
+      const body = (await res.json()) as { success?: boolean; error?: string };
+      const controlled = [500, 503, 504].includes(res.status);
+      const noLeak =
+        typeof body.error === "string" &&
+        !body.error.includes("S3") &&
+        !body.error.includes("bucket") &&
+        !body.error.includes("arn:");
+      return controlled && body.success === false && noLeak;
+    },
   },
 ];
 
@@ -255,13 +285,13 @@ async function main(): Promise<void> {
   let total = 0;
 
   failures += await runPhase("A: validation + controlled failure", {
-    AI_PROVIDER: "gemini",
-    GEMINI_API_KEY: "", // unconfigured -> controlled 5xx path
+    AI_PROVIDER: "bedrock", // non-empty pin: beats baked env; unconfigured -> 5xx
+    GEMINI_API_KEY: "",
   }, PHASE_A);
   total += PHASE_A.length;
 
-  failures += await runPhase("B: valid contract (legacy MOCK_BEDROCK=1)", {
-    AI_PROVIDER: "", // empty -> not explicit, exercises the legacy flag path
+  failures += await runPhase("B: valid contract (explicit mock provider)", {
+    AI_PROVIDER: "mock", // non-empty pin: beats baked env; deterministic offline
     MOCK_BEDROCK: "1",
     GEMINI_API_KEY: "",
   }, PHASE_B);

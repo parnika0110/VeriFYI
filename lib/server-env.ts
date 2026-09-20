@@ -15,7 +15,13 @@ import { SERVER_ENV } from "./server-env.generated";
  *  value may pin a model with an exhausted/free-tier-invalid quota bucket.
  *  It comes from runtime env only, falling back to the code-pinned default
  *  (DEFAULT_GEMINI_MODEL in lib/ai/gemini.ts). */
-export type ServerEnvKey = keyof typeof SERVER_ENV | "GEMINI_MODEL";
+export type ServerEnvKey =
+  | keyof typeof SERVER_ENV
+  | "GEMINI_MODEL"
+  | "AWS_REGION"
+  | "S3_UPLOADS_BUCKET"
+  | "VERIFICATIONS_TABLE_NAME"
+  | "TEXTRACT_S3_PREFIX";
 
 export function serverEnv(name: ServerEnvKey): string {
   const runtimeValue = process.env[name];
