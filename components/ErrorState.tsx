@@ -32,7 +32,7 @@ const ERROR_META = {
   file: {
     icon: FileWarning,
     title: "File problem",
-    detail: "That file couldn't be processed. Please try a PNG, JPG or PDF under 10 MB.",
+    detail: "That file couldn't be processed. Please try a PNG, JPG or PDF under 6 MB.",
   },
   unknown: {
     icon: TriangleAlert,

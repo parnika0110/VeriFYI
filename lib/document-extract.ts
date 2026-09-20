@@ -2,7 +2,8 @@
  * Server-side document text extraction: S3 → Amazon Textract → text.
  *
  * Flow (used by POST /api/extract-document):
- *   1. Validate type/size (same rules as the UI: PNG/JPG/PDF, <= 10 MB).
+ *   1. Validate type/size (same rules as the UI: PNG/JPG/PDF, <= 6 MB —
+ *      the Amplify SSR request payload cap).
  *   2. Upload bytes to a dedicated S3 prefix under a random key (no PII in
  *      the key; nothing is written to logs or DynamoDB).
  *   3. Images and 1-page PDFs use the synchronous DetectDocumentText call;
@@ -35,7 +36,7 @@ import { AppError } from "./errors";
 import { log } from "./logging";
 import { serverEnv } from "./server-env";
 
-export const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024; // 10 MB (Textract sync limit)
+export const MAX_DOCUMENT_BYTES = 6 * 1024 * 1024; // 6 MB (Amplify SSR payload cap)
 const ALLOWED_MIME = new Set([
   "application/pdf",
   "image/png",
@@ -69,7 +70,7 @@ export function validateDocumentMeta(meta: DocumentMeta): void {
   if (meta.size > MAX_DOCUMENT_BYTES) {
     throw new AppError(
       "FILE_TOO_LARGE",
-      "File is too large. The maximum size is 10 MB.",
+      "File is too large. The maximum size is 6 MB.",
     );
   }
 }

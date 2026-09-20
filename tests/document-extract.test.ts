@@ -96,11 +96,14 @@ async function main(): Promise<void> {
       (e: unknown) => e instanceof AppError && e.code === "EMPTY_FILE",
     );
   });
-  await check("rejects oversized file (>10MB)", () => {
+  await check("rejects oversized file (>6MB)", () => {
     assert.throws(
-      () => validateDocumentMeta({ name: "big.pdf", size: 11 * 1024 * 1024, type: "application/pdf" }),
+      () => validateDocumentMeta({ name: "big.pdf", size: 7 * 1024 * 1024, type: "application/pdf" }),
       (e: unknown) => e instanceof AppError && e.code === "FILE_TOO_LARGE",
     );
+  });
+  await check("accepts file at the 6 MB limit", () => {
+    validateDocumentMeta({ name: "scan.pdf", size: 6 * 1024 * 1024, type: "application/pdf" });
   });
   await check("accepts valid PDF/image metadata", () => {
     validateDocumentMeta({ name: "offer.pdf", size: 1024, type: "application/pdf" });

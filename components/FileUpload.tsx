@@ -162,7 +162,7 @@ export function FileUpload({
             {status === "extracting" ? statusMessage || "Extracting text from document…" : busy ? "Checking file…" : "Drop a screenshot or PDF here, or click to browse"}
           </span>
           <span id="upload-hint" className="text-xs text-[var(--ink-400)]">
-            PNG, JPG or PDF · up to 10 MB
+            PNG, JPG or PDF · up to 6 MB
           </span>
           {status === "extracting" && (
             <span className="mt-1 h-1 w-40 overflow-hidden rounded-full bg-[var(--surface-muted)]">

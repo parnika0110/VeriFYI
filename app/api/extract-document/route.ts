@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
 
     const bytes = new Uint8Array(await file.arrayBuffer());
     if (bytes.byteLength > MAX_DOCUMENT_BYTES + 1024) {
-      throw new AppError("FILE_TOO_LARGE", "File is too large. The maximum size is 10 MB.");
+      throw new AppError("FILE_TOO_LARGE", "File is too large. The maximum size is 6 MB.");
     }
 
     log.info("document_extract_started", {

@@ -73,7 +73,7 @@ const SAFE_CLIENT_MESSAGES: Record<ErrorCode, string> = {
   NOT_FOUND: "Resource not found.",
   INTERNAL_ERROR: "An internal error occurred. Please try again later.",
   UNSUPPORTED_FILE_TYPE: "Unsupported file type. Please upload a PNG, JPG, or PDF.",
-  FILE_TOO_LARGE: "File is too large. The maximum size is 10 MB.",
+  FILE_TOO_LARGE: "File is too large. The maximum size is 6 MB.",
   EMPTY_FILE: "The uploaded file is empty.",
   NO_TEXT_EXTRACTED: "OCR couldn’t find readable text in this document. Try a clearer scan or paste the text.",
 };
