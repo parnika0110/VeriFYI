@@ -102,6 +102,10 @@ export interface HealthResponse {
   provider?: "gemini" | "bedrock" | "mock";
   /** True when the active provider can actually run (e.g. key present). Additive field. */
   providerConfigured?: boolean;
+  /** Safe delivery diagnostics: whether the env VAR NAMES were seen at runtime (never values). */
+  aiProviderEnvPresent?: boolean;
+  geminiModelEnvPresent?: boolean;
+  geminiKeyEnvPresent?: boolean;
 }
 
 /** Envelope for GET /api/verifications (history; optional feature). */

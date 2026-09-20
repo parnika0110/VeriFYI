@@ -18,6 +18,10 @@ export function GET() {
     dynamodbConfigured: isDynamoDbConfigured(),
     provider: getProviderName(),
     providerConfigured: isProviderConfigured(),
+    // Safe runtime diagnostics: presence of the env VAR NAMES only — never values.
+    aiProviderEnvPresent: Boolean(process.env.AI_PROVIDER),
+    geminiModelEnvPresent: Boolean(process.env.GEMINI_MODEL),
+    geminiKeyEnvPresent: Boolean(process.env.GEMINI_API_KEY),
   };
   return NextResponse.json(body);
 }
